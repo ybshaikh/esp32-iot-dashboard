@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ESP32 IoT Dual Relay & Monitoring Dashboard</title>
+  <!-- Firebase JS SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  
+  <style>
+    * { box-sizing: border-box; font-family: 'Segoe UI', Arial, sans-serif; }
+    body { background-color: #eef2f5; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .card-container { background: #ffffff; padding: 30px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); width: 100%; max-width: 440px; text-align: center; }
+    h2 { color: #1a73e8; margin-top: 0; margin-bottom: 20px; font-size: 22px; }
+    .metric-box { background: #f8f9fa; border: 1px solid #e2e8f0; padding: 15px; border-radius: 12px; margin-bottom: 15px; }
+    .metric-title { font-size: 13px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .metric-value { font-size: 30px; color: #0f172a; font-weight: 700; margin-top: 6px; }
+    
+    .input-section { margin-top: 20px; text-align: left; background: #f1f5f9; padding: 15px; border-radius: 12px; }
+    .input-label { font-weight: 600; font-size: 14px; color: #334155; display: block; margin-bottom: 8px; }
+    .input-group { display: flex; gap: 8px; }
+    input[type="number"] { width: 65%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 16px; outline: none; background: #ffffff; }
+    .btn-update { width: 35%; padding: 10px; background-color: #2563eb; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .btn-update:hover { background-color: #1d4ed8; }
+    
+    .relay-btn { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 16px; font-weight: 700; cursor: pointer; transition: 0.2s; margin-top: 8px; color: white; }
+    .btn-on { background-color: #16a34a; }
+    .btn-on:hover { background-color: #15803d; }
+    .btn-off { background-color: #dc2626; }
+    .btn-off:hover { background-color: #b91c1c; }
+
+    .status-badge { display: inline-block; padding: 8px 16px; border-radius: 20px; font-weight: 700; font-size: 13px; margin-top: 5px; }
+    .status-normal { background-color: #dcfce7; color: #15803d; }
+    .status-alert { background-color: #fee2e2; color: #b91c1c; }
+  </style>
+</head>
+<body>
+
+<div class="card-container">
+  <h2>⚡ ESP32 IoT Dashboard</h2>
+
+  <div class="metric-box">
+    <div class="metric-title">Voltage</div>
+    <div class="metric-value" id="voltageVal">0.0 V</div>
+  </div>
+
+  <div class="metric-box">
+    <div class="metric-title">Current</div>
+    <div class="metric-value" id="currentVal">0.00 A</div>
+  </div>
+
+  <div class="metric-box">
+    <div class="metric-title">Over-Current Relay Status</div>
+    <div id="statusBadge" class="status-badge status-normal">NORMAL</div>
+  </div>
+
+  <div class="input-section">
+    <label class="input-label">Set Current Limit (A):</label>
+    <div class="input-group">
+      <input type="number" id="setCurrentInput" step="0.1" placeholder="Limit in Amps">
+      <button class="btn-update" onclick="updateSetCurrent()">Update</button>
+    </div>
+  </div>
+
+  <div class="input-section">
+    <label class="input-label">Manual Relay 2 Control:</label>
+    <button id="manualRelayBtn" class="relay-btn btn-off" onclick="toggleManualRelay()">TURN ON RELAY 2</button>
+  </div>
+</div>
+
+<script>
+  // Firebase Configuration
+  const firebaseConfig = {
+    databaseURL: "https://esp32-relay-1b163-default-rtdb.firebaseio.com"
+  };
+
+  // Initialize Firebase
+  firebase.initializeApp(firebaseConfig);
+  const database = firebase.database();
+
+  let currentRelay2State = false;
+
+  // Realtime Data Listener
+  database.ref('/IoT_Control').on('value', (snapshot) => {
+    const data = snapshot.val();
+    if (data) {
+      document.getElementById('voltageVal').innerText = (data.Voltage !== undefined ? Number(data.Voltage).toFixed(1) : "0.0") + " V";
+      document.getElementById('currentVal').innerText = (data.Current !== undefined ? Number(data.Current).toFixed(2) : "0.00") + " A";
+      
+      if (data.Set_Current !== undefined && !document.getElementById('setCurrentInput').value) {
+        document.getElementById('setCurrentInput').placeholder = "Current Limit: " + data.Set_Current + " A";
+      }
+
+      const badge = document.getElementById('statusBadge');
+      if (data.Relay_Status) {
+        badge.innerText = "OVER CURRENT - RELAY 1 ON";
+        badge.className = "status-badge status-alert";
+      } else {
+        badge.innerText = "NORMAL";
+        badge.className = "status-badge status-normal";
+      }
+
+      if (data.Manual_Relay_2 !== undefined) {
+        currentRelay2State = data.Manual_Relay_2;
+        const relay2Btn = document.getElementById('manualRelayBtn');
+        if (currentRelay2State) {
+          relay2Btn.innerText = "RELAY 2 IS ON (CLICK TO TURN OFF)";
+          relay2Btn.className = "relay-btn btn-off";
+        } else {
+          relay2Btn.innerText = "RELAY 2 IS OFF (CLICK TO TURN ON)";
+          relay2Btn.className = "relay-btn btn-on";
+        }
+      }
+    }
+  }, (error) => {
+    console.error("Firebase Read Error: ", error);
+  });
+
+  function updateSetCurrent() {
+    const inputVal = parseFloat(document.getElementById('setCurrentInput').value);
+    if (!isNaN(inputVal) && inputVal > 0) {
+      database.ref('/IoT_Control/Set_Current').set(inputVal)
+        .then(() => alert('Current limit updated: ' + inputVal + ' A'))
+        .catch((error) => alert('Error: ' + error.message));
+    } else {
+      alert('Please enter a valid current value!');
+    }
+  }
+
+  function toggleManualRelay() {
+    const newState = !currentRelay2State;
+    database.ref('/IoT_Control/Manual_Relay_2').set(newState)
+      .catch((error) => alert('Error controlling relay: ' + error.message));
+  }
+</script>
+
+</body>
+</html>
